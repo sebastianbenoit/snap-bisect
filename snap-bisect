@@ -34,7 +34,7 @@ ${0##*/} [-d] (<good-date> <bad-date>|good|bad|list)
 Use binary search to find the OpenBSD snapshot that introduced a bug.
 
     -d
-	Print debug output.
+	Print debug output, do not run sysupgrade.
 
     <good-date> <bad-date>
         Initialize with good (start) and buggy (end) date. Dates must
@@ -136,11 +136,11 @@ _c=`echo ${_snap} | awk '{ print $3; }'`
 [ -n "${_debug}" ] && echo "${_s}"
 
 if [ -n "${_debug}" ]; then
-	echo "doing 'sysupgrade -nfs ${_archive}/${_s}'"
+	echo "would run 'sysupgrade -nfs ${_archive}/${_s}'"
 else
 	sysupgrade -nfs ${_archive}/${_s} || usage "sysupgrade failed"
 fi
-echo "reboot to install the snapshot"
+[ -n "${_debug}" ] || echo "reboot to install the snapshot"
 
 echo ${_good} > ${_base}/good
 echo ${_bad} > ${_base}/bad
