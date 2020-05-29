@@ -1,2 +1,2 @@
 # snap-bisect
-A tool to jump between OpenBSD snapshots, bisecting them to find first appearance of a bug
+Use binary search to find the OpenBSD snapshot that introduced a bug.
