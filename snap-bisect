@@ -18,8 +18,10 @@
 
 _base="/var/db/snap-bisect"
 _archive="https://ftp.hostserver.de/archive"
+_arch=`uname -m`
 readonly _base
 readonly _archive
+readonly _arch
 _debug=""
 
 _usage() {
@@ -99,8 +101,6 @@ else
 		_usage "could not retrieve index"
 	fi
 fi
-
-_arch=`uname -m`
 
 [ -n "${_debug}" ] && echo ${_cmd} ${_good} ${_bad} ${_current} ${_arch}
 
