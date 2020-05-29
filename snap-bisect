@@ -24,12 +24,13 @@ readonly _archive
 readonly _arch
 _debug=""
 
-_usage() {
+usage()
+{
 	if [ -n "${1}" ]; then
 		echo "${1}" 1>&2
 	else
 		cat << EOM
-snap-bisect [-d] (<good-date> <bad-date>|good|bad|list)
+${0##*/} [-d] (<good-date> <bad-date>|good|bad|list)
 Use binary search to find the OpenBSD snapshot that introduced a bug.
 
     -d
@@ -57,7 +58,7 @@ EOM
 
 _name=${0##*/}
 
-[ -d ${_base} ] || _usage "directory ${_base} does not exists, create it first"
+[ -d ${_base} ] || usage "directory ${_base} does not exists, create it first"
 
 unset _cmd
 if [ "${1}" = "-d" ]; then
@@ -74,23 +75,23 @@ case "${1}" in
 esac
 
 if [ -z "${_cmd}" ]; then
-	[ -n "${1}" ] || _usage
-	[ -n "${2}" ] || _usage
+	[ -n "${1}" ] || usage
+	[ -n "${2}" ] || usage
 	_good=`date -ju -f "%Y-%m-%d %H:%M:%S" "+%s" "${1} 00:00:00"`
 	_bad=`date -ju -f "%Y-%m-%d %H:%M:%S" "+%s" "${2} 00:00:00"`
-	[ -n "${_good}" ] || _usage "bad argument ${1}, must be a date yyyy-mm-dd?"
-	[ -n "${_bad}" ] || _usage "bad argument ${2}, must be a date yyyy-mm-dd?"
+	[ -n "${_good}" ] || usage "bad argument ${1}, must be a date yyyy-mm-dd?"
+	[ -n "${_bad}" ] || usage "bad argument ${2}, must be a date yyyy-mm-dd?"
 	case "${_good}" in
-	    ''|*[!0-9]*) _usage "bad argument ${1}, must be a date yyyy-mm-dd?";;
+	    ''|*[!0-9]*) usage "bad argument ${1}, must be a date yyyy-mm-dd?";;
 	esac
 	case "${_bad}" in
-	    ''|*[!0-9]*) _usage "bad argument ${2}, must be a date yyyy-mm-dd?";;
+	    ''|*[!0-9]*) usage "bad argument ${2}, must be a date yyyy-mm-dd?";;
 	esac
-	[ ${_good} -ge ${_bad} ] && _usage "<good> must be earlier than <bad>" 
+	[ ${_good} -ge ${_bad} ] && usage "<good> must be earlier than <bad>"
 	_cmd=i
 	rm -f ${_base}/INDEX ${_base}/good ${_base}/bad ${_base}/current
 	ftp -MVo ${_base}/INDEX ${_archive}/INDEX || \
-		_usage "could not retrieve index"
+		usage "could not retrieve index"
 else
 	_good=`cat ${_base}/good`
 	_bad=`cat ${_base}/bad`
@@ -98,7 +99,7 @@ else
 	[ -f ${_base}/INDEX ] || \
 		ftp -MVo ${_base}/INDEX ${_archive}/INDEX
 	if [ $? -gt 0 ]; then
-		_usage "could not retrieve index"
+		usage "could not retrieve index"
 	fi
 fi
 
@@ -106,11 +107,11 @@ fi
 
 case "${_cmd}" in
 	g)
-		[ ${_current} = ${_good} ] && _usage "no more to try"
+		[ ${_current} = ${_good} ] && usage "no more to try"
 		_good=${_current}
 		;;
 	b)
-		[ ${_current} = ${_bad} ] && _usage "no more to try"
+		[ ${_current} = ${_bad} ] && usage "no more to try"
 		_bad=${_current}
 		;;
 	l)
@@ -125,10 +126,10 @@ _snap=`awk -v ARCH="${_arch}" -v bi_start="${_good}" -v bi_end="${_bad}" \
 	'$2 == ARCH && $3 >= bi_start && $3 <= bi_end { l[i++]=$0; } END \
 	{ if (i > 0)  { print l[int(i/2)]; } }' < ${_base}/INDEX`
 if [ $? -gt 0 ]; then
-	_usage "could not find snapshot, awk failed"
+	usage "could not find snapshot, awk failed"
 fi
 
-[ -n "${_snap}" ] || _usage "could not find snapshot in date range"
+[ -n "${_snap}" ] || usage "could not find snapshot in date range"
 [ -n "${_debug}" ] && echo "'${_snap}'"
 _s=`echo ${_snap} | awk '{ print $1; }'`
 _c=`echo ${_snap} | awk '{ print $3; }'`
@@ -137,7 +138,7 @@ _c=`echo ${_snap} | awk '{ print $3; }'`
 if [ -n "${_debug}" ]; then
 	echo "doing 'sysupgrade -nfs ${_archive}/${_s}'"
 else
-	sysupgrade -nfs ${_archive}/${_s} || _usage "sysupgrade failed"
+	sysupgrade -nfs ${_archive}/${_s} || usage "sysupgrade failed"
 fi
 echo "reboot to install the snapshot"
 
