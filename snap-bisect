@@ -1,0 +1,145 @@
+#!/bin/ksh
+#
+#  Copyright (c) 2020 Sebastian Benoit <benoit-lists@fb12.de>
+# 
+#  Permission to use, copy, modify, and distribute this software for any
+#  purpose with or without fee is hereby granted, provided that the above
+#  copyright notice and this permission notice appear in all copies.
+# 
+#  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+#  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+#  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+#  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+#  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+#  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+#
+
+_base="/var/db/snap-bisect"
+_archive="https://ftp.hostserver.de/archive"
+readonly _base
+readonly _archive
+_debug=""
+
+_usage() {
+	if [ -n "${1}" ]; then
+		echo "${1}" 1>&2
+	else
+		cat << EOM
+snap-bisect [-d] (<good-date> <bad-date>|good|bad|list)
+Use binary search to find the OpenBSD snapshot that introduced a bug.
+
+    -d
+	Print debug output.
+
+    <good-date> <bad-date>
+        Initialize with good (start) and buggy (end) date. Dates must
+	be in format YYYY-MM-DD. To see a list of possible Dates use 'list'.
+	Find and download first candidate snapshot based on the two dates.
+
+    good
+	Mark currently running snapshot is ok, calculate and download
+	a new candidate snapshot for testing.
+
+    bad
+	Mark currently running snapshot has a buggy, calculate and
+	download a new candidate snapshot for testing.
+
+    list
+	List all snapshots that are available for your architecture.
+EOM
+	fi
+	[ -n "${2}" ] && exit "${2}" || exit 1
+}
+
+_name=${0##*/}
+
+[ -d ${_base} ] || _usage "directory ${_base} does not exists, create it first"
+
+unset _cmd
+if [ "${1}" = "-d" ]; then
+	shift
+	_debug="1"
+fi
+case "${1}" in
+	good)
+		_cmd=g;;
+	bad)
+		_cmd=b;;
+	list)
+		_cmd=l;;
+esac
+
+if [ -z "${_cmd}" ]; then
+	[ -n "${1}" ] || _usage
+	[ -n "${2}" ] || _usage
+	_good=`date -ju -f "%Y-%m-%d %H:%M:%S" "+%s" "${1} 00:00:00"`
+	_bad=`date -ju -f "%Y-%m-%d %H:%M:%S" "+%s" "${2} 00:00:00"`
+	[ -n "${_good}" ] || _usage "bad argument ${1}, must be a date yyyy-mm-dd?"
+	[ -n "${_bad}" ] || _usage "bad argument ${2}, must be a date yyyy-mm-dd?"
+	case "${_good}" in
+	    ''|*[!0-9]*) _usage "bad argument ${1}, must be a date yyyy-mm-dd?";;
+	esac
+	case "${_bad}" in
+	    ''|*[!0-9]*) _usage "bad argument ${2}, must be a date yyyy-mm-dd?";;
+	esac
+	[ ${_good} -ge ${_bad} ] && _usage "<good> must be earlier than <bad>" 
+	_cmd=i
+	rm -f ${_base}/INDEX ${_base}/good ${_base}/bad ${_base}/current
+	ftp -MVo ${_base}/INDEX ${_archive}/INDEX || \
+		_usage "could not retrieve index"
+else
+	_good=`cat ${_base}/good`
+	_bad=`cat ${_base}/bad`
+	_current=`cat ${_base}/current`
+	[ -f ${_base}/INDEX ] || \
+		ftp -MVo ${_base}/INDEX ${_archive}/INDEX
+	if [ $? -gt 0 ]; then
+		_usage "could not retrieve index"
+	fi
+fi
+
+_arch=`uname -m`
+
+[ -n "${_debug}" ] && echo ${_cmd} ${_good} ${_bad} ${_current} ${_arch}
+
+case "${_cmd}" in
+	g)
+		[ ${_current} = ${_good} ] && _usage "no more to try"
+		_good=${_current}
+		;;
+	b)
+		[ ${_current} = ${_bad} ] && _usage "no more to try"
+		_bad=${_current}
+		;;
+	l)
+		grep ${_arch} ${_base}/INDEX
+		exit 0
+		;;
+esac
+
+[ -n "${_debug}" ] && echo ${_cmd} ${_good} ${_bad} ${_current} ${_arch}
+
+_snap=`awk -v ARCH="${_arch}" -v bi_start="${_good}" -v bi_end="${_bad}" \
+	'$2 == ARCH && $3 >= bi_start && $3 <= bi_end { l[i++]=$0; } END \
+	{ if (i > 0)  { print l[int(i/2)]; } }' < ${_base}/INDEX`
+if [ $? -gt 0 ]; then
+	_usage "could not find snapshot, awk failed"
+fi
+
+[ -n "${_snap}" ] || _usage "could not find snapshot in date range"
+[ -n "${_debug}" ] && echo "'${_snap}'"
+_s=`echo ${_snap} | awk '{ print $1; }'`
+_c=`echo ${_snap} | awk '{ print $3; }'`
+[ -n "${_debug}" ] && echo "${_s}"
+
+if [ -n "${_debug}" ]; then
+	echo "doing 'sysupgrade -nfs ${_archive}/${_s}'"
+else
+	sysupgrade -nfs ${_archive}/${_s} || _usage "sysupgrade failed"
+fi
+echo "reboot to install the snapshot"
+
+echo ${_good} > ${_base}/good
+echo ${_bad} > ${_base}/bad
+echo ${_c} > ${_base}/current
